@@ -3,7 +3,24 @@ const { v4: uuidv4 } = require("uuid");
 const Router = express.Router();
 const CITY_CODE = require("../Utils/City");
 const axios = require("axios");
+const { authentication } = require("../AuthMiddlewares/middlewares/index");
 const ProtocolLayer = require("../FunctionalityHandlers/MiddleWares");
+const Cookies = require("js-cookie");
+const useCancellablePromise = require("./CancelReq/CancellableProm");
+
+function getCurrentTime() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  const milliseconds = String(now.getMilliseconds()).padStart(3, '0');
+  
+  const currentTime = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}Z`;
+  return currentTime;
+}
 
 function getCity(city, state, cityCode) {
   if (cityCode) {
@@ -29,28 +46,26 @@ function createContextObject(contextObject = {}) {
   const {
     transactionId, //FIXME: if ! found in args then create new
     messageId = uuidv4(),
-    action = contextObject.SEARCH,
+    action = "search",
     bppId,
     city,
     state,
     cityCode,
-    bpp_uri,
   } = contextObject || {};
 
   return {
-    domain: process.env.DOMAIN,
-    country: process.env.country,
-    city: getCity(city, state, cityCode),
+    domain: "nic2004:52110",
+    country: "IND",
+    city: "*",
     action: "search",
     core_version: "1.1.0",
-    bap_id: process.env.bapId,
-    bap_uri: process.env.bapUrl,
-    bpp_uri: process.env.bpp_uri,
+    bap_id: "ondc-jatah.web.app",
+    bap_uri: "https://ondc-jatah.web.app",
     transaction_id: getTransactionId(transactionId),
     message_id: messageId,
-    timestamp: new Date(),
+    timestamp: getCurrentTime(),
     ...(bppId && { bpp_id: bppId }),
-    ttl: "PT30S",
+    ttl: "P1M",
   };
 }
 
@@ -59,6 +74,29 @@ function getTransactionId(transactionId) {
     return transactionId;
   } else {
     return uuidv4();
+  }
+}
+
+// {
+//   context: { city: 'Bengaluru', state: 'Karnataka' },
+//   message: {
+//     criteria: {
+//       search_string: 'milk',
+//       delivery_location: '12.9236470000001,77.5861180000001'
+//     }
+//   }
+// }
+
+async function makeApiCall(data) {
+  const apiUrl = 'http://localhost:9900/protocol/search'; 
+
+  try {
+    const response = await axios.post(apiUrl, data);
+    console.log(response.data, 'data here!');
+    return response.data;
+  } catch (error) {
+    console.error('Error:', error);
+    throw error; // Re-throw the error to handle it in the calling code.
   }
 }
 
@@ -72,52 +110,50 @@ Router.post("/ondc-api/search", async (req, res) => {
     city: requestContext.city,
     state: requestContext.state,
   });
-
-  const { standards = {}, settlement = {} } = { criteria, payment } || {};
-
   const searchRequest = {
     context: protocolContext,
     message: {
       intent: {
-        ...(standards?.search_string && {
-          item: {
+        ...(criteria?.search_string && {
+          provider: {
             descriptor: {
-              name: standards.search_string,
+              name: criteria.search_string,
             },
           },
         }),
-        ...((standards?.provider_id ||
-          standards?.category_id ||
-          standards?.provider_name) && {
+        ...((criteria?.provider_id ||
+          criteria?.category_id ||
+          criteria?.provider_name) && {
           provider: {
-            ...(standards?.provider_id && {
-              id: standards?.provider_id,
+            ...(criteria?.provider_id && {
+              id: criteria?.provider_id,
             }),
-            ...(standards?.category_id && {
-              category_id: standards.category_id,
+            ...(criteria?.category_id && {
+              category_id: criteria.category_id,
             }),
-            ...(standards?.provider_name && {
+            ...(criteria?.provider_name && {
               descriptor: {
-                name: standards?.provider_name,
+                name: criteria?.provider_name,
               },
             }),
           },
         }),
-        ...(standards?.pickup_location || standards?.delivery_location
+        ...(criteria?.pickup_location || criteria?.delivery_location
           ? {
               fulfillment: {
                 type: "Delivery",
-                ...(standards?.pickup_location && {
+                ...(criteria?.pickup_location && {
                   start: {
                     location: {
-                      gps: standards?.pickup_location,
+                      gps: criteria?.pickup_location,
                     },
                   },
                 }),
-                ...(standards?.delivery_location && {
+                ...(criteria?.delivery_location && {
                   end: {
                     location: {
-                      gps: standards?.delivery_location,
+                      gps: criteria?.delivery_location,
+                      address: { area_code: "560041" },
                     },
                   },
                 }),
@@ -128,66 +164,41 @@ Router.post("/ondc-api/search", async (req, res) => {
                 type: "Delivery",
               },
             }),
-        ...((standards?.category_id || standards?.category_name) && {
+        ...((criteria?.category_id || criteria?.category_name) && {
           category: {
-            ...(standards?.category_id && {
-              id: standards?.category_id,
+            ...(criteria?.category_id && {
+              id: criteria?.category_id,
             }),
-            ...(standards?.category_name && {
+            ...(criteria?.category_name && {
               descriptor: {
-                name: standards?.category_name,
+                name: criteria?.category_name,
               },
             }),
           },
         }),
         payment: {
-          "@ondc/org/buyer_app_finder_fee_type":
-            settlement?.buyer_app_finder_fee_type ||
-            process.env.BAP_FINDER_FEE_TYPE,
-          "@ondc/org/buyer_app_finder_fee_amount":
-            settlement?.buyer_app_finder_fee_amount ||
-            process.env.BAP_FINDER_FEE_AMOUNT,
+          "@ondc/org/buyer_app_finder_fee_type": "percent",
+          "@ondc/org/buyer_app_finder_fee_amount": "2",
         },
       },
     },
   };
+  await makeApiCall(searchRequest)
+  .then((result) => {
+    res.send(result);
+  })
+  .catch((error) => {
+    res.send(error);
+  });
 
-  try {
-    // Protocol Layer Call
-    // const response = await axios.post('http://localhost:9900/protocol/search', searchRequest);
-
-    // console.log(response)
-
-    const Layer = new ProtocolLayer();
-    const protocolResponse = Layer.gatewaySearch(searchRequest);
-
-    console.log(protocolResponse);
-
-    res.send({
-      context: protocolContext,
-      searchRequest: searchRequest,
-      message: protocolResponse.message,
-    }); // Access response data
-  } catch (err) {
-    console.log(err);
-  }
-});
-
-Router.post("/ondc-api/on_search", async (req, res) => {
-  const { query } = req;
-  const { messageId } = query;
-
-  if (messageId) {
-    searchService
-      .onSearch(query)
-      .then((result) => {
-        res.json(result);
-      })
-      .catch((err) => {
-        console.log("here I am");
-        next(err);
-      });
-  } else throw new BadRequestParameterError();
+  // try {
+  //   const Layer = new ProtocolLayer();
+  //   const protocolResponse = await Layer.gatewaySearch(searchRequest); 
+    
+  //   res.send(protocolResponse); 
+  // } catch (err) {
+  //   console.log(err);
+  // }
 });
 
 module.exports = Router;
