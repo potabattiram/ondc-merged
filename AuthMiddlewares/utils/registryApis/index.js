@@ -11,8 +11,8 @@ import { getSubscriberType } from "./registryUtil.js";
 const lookupBppById = async ({
     subscriber_id, 
     type, 
-    domain = process.env.DOMAIN, 
-    country = process.env.COUNTRY
+    domain = "nic2004:52110", 
+    country = "IND"
 }) => {
     let request = {subscriber_id, type, domain, country};
     let registryBaseUrl = REGISTRY_SERVICE_API_URLS.LOOKUP;
@@ -44,15 +44,15 @@ const lookupGateways = async () => {
     let registryBaseUrl = REGISTRY_SERVICE_API_URLS.LOOKUP;
     let request = {
         type: getSubscriberType(SUBSCRIBER_TYPE.BG),
-        domain: process.env.DOMAIN, 
-        country: process.env.COUNTRY
+        domain: "nic2004:52110", 
+        country: "IND"
     };
     
     if(process.env.ENV_TYPE !== "STAGING") {
         request = await formatRegistryRequest({ 
             type: getSubscriberType(SUBSCRIBER_TYPE.BG),
-            country: process.env.COUNTRY,
-            domain: process.env.DOMAIN,
+            country: "IND",
+            domain: "nic2004:52110",
         });
         registryBaseUrl = REGISTRY_SERVICE_API_URLS.VLOOKUP;
     }

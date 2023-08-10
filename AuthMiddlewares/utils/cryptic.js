@@ -6,8 +6,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { getSubscriberType } from './registryApis/registryUtil.js';
 
 export const createSigningString = async (message, created, expires) => {
-    if (!created) created = Math.floor(new Date().getTime() / 1000).toString();
-    if (!expires) expires = (parseInt(created) + (1 * 60 * 60)).toString();
+    let created = (created === null) ? Math.floor(Date.now() / 1000) : created;
+    let expires = (expires === null) ? Math.floor((Date.now() + 3600000) / 1000) : expires;
+
 
     await _sodium.ready;
 
@@ -41,10 +42,10 @@ export const createAuthorizationHeader = async (message) => {
         created
     } = await createSigningString(JSON.stringify(message));
 
-    const signature = await signMessage(signing_string, process.env.BAP_PRIVATE_KEY || "");
+    const signature = await signMessage(signing_string, "Ew/pm7Hmeb6q0vNghsw+tGgbH0/UdHoOjvwOQVViIc9+l0Jqtlca4ZNo062yg3NC/BJcSmh8cYN82fv4t9muvA==" || "");
 
-    const subscriber_id = process.env.BAP_ID;
-    const unique_key_id = process.env.BAP_UNIQUE_KEY_ID;
+    const subscriber_id = "ondc-jatah.web.app";
+    const unique_key_id = "710";
     const header = `Signature keyId="${subscriber_id}|${unique_key_id}|ed25519",algorithm="ed25519",created="${created}",expires="${expires}",headers="(created) (expires) digest",signature="${signature}"`
 
     return header;
@@ -162,14 +163,14 @@ export const signRegistryRequest = async (request) => {
         reqObj.push(request.subscriber_id);
 
     const signingString = reqObj.join("|");
-    return await signMessage(signingString, process.env.BAP_PRIVATE_KEY || "");
+    return await signMessage(signingString, "Ew/pm7Hmeb6q0vNghsw+tGgbH0/UdHoOjvwOQVViIc9+l0Jqtlca4ZNo062yg3NC/BJcSmh8cYN82fv4t9muvA==" || "");
 }
 
 export const formatRegistryRequest = async (request) => {
     const signature = await signRegistryRequest(request);
 
     return {
-        sender_subscriber_id: process.env.BAP_ID,
+        sender_subscriber_id: "ondc-jatah.web.app",
         request_id: uuidv4(),
         timestamp: new Date().toISOString(),
         search_parameters: {

@@ -5,22 +5,9 @@ const CITY_CODE = require("../Utils/City");
 const axios = require("axios");
 const { authentication } = require("../AuthMiddlewares/middlewares/index");
 const ProtocolLayer = require("../FunctionalityHandlers/MiddleWares");
+const ContextFactory = require("../FunctionalityHandlers/MiddleWares");
 const Cookies = require("js-cookie");
 const useCancellablePromise = require("./CancelReq/CancellableProm");
-
-function getCurrentTime() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  const hours = String(now.getHours()).padStart(2, '0');
-  const minutes = String(now.getMinutes()).padStart(2, '0');
-  const seconds = String(now.getSeconds()).padStart(2, '0');
-  const milliseconds = String(now.getMilliseconds()).padStart(3, '0');
-  
-  const currentTime = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}Z`;
-  return currentTime;
-}
 
 function getCity(city, state, cityCode) {
   if (cityCode) {
@@ -42,40 +29,32 @@ function getCity(city, state, cityCode) {
   }
 }
 
-function createContextObject(contextObject = {}) {
-  const {
-    transactionId, //FIXME: if ! found in args then create new
-    messageId = uuidv4(),
-    action = "search",
-    bppId,
-    city,
-    state,
-    cityCode,
-  } = contextObject || {};
+// function createContextObject(contextObject = {}) {
+//   const {
+//     transactionId, //FIXME: if ! found in args then create new
+//     messageId = uuidv4(),
+//     action = "search",
+//     bppId,
+//     city,
+//     state,
+//     cityCode,
+//   } = contextObject || {};
 
-  return {
-    domain: "nic2004:52110",
-    country: "IND",
-    city: "*",
-    action: "search",
-    core_version: "1.1.0",
-    bap_id: "ondc-jatah.web.app",
-    bap_uri: "https://ondc-jatah.web.app",
-    transaction_id: getTransactionId(transactionId),
-    message_id: messageId,
-    timestamp: getCurrentTime(),
-    ...(bppId && { bpp_id: bppId }),
-    ttl: "P1M",
-  };
-}
-
-function getTransactionId(transactionId) {
-  if (transactionId) {
-    return transactionId;
-  } else {
-    return uuidv4();
-  }
-}
+//   return {
+//     domain: "nic2004:52110",
+//     country: "IND",
+//     city: "*",
+//     action: "search",
+//     core_version: "1.1.0",
+//     bap_id: "ondc-jatah.web.app",
+//     bap_uri: "https://ondc-jatah.web.app",
+//     transaction_id: getTransactionId(transactionId),
+//     message_id: messageId,
+//     timestamp: getCurrentTime(),
+//     ...(bppId && { bpp_id: bppId }),
+//     ttl: "P1M",
+//   };
+// }
 
 // {
 //   context: { city: 'Bengaluru', state: 'Karnataka' },
@@ -88,14 +67,14 @@ function getTransactionId(transactionId) {
 // }
 
 async function makeApiCall(data) {
-  const apiUrl = 'http://localhost:9900/protocol/search'; 
-
+  const apiUrl = "http://localhost:9900/protocol/search";
+  console.log(data, "dadasnjksd");
   try {
     const response = await axios.post(apiUrl, data);
-    console.log(response.data, 'data here!');
+    console.log(response.data, "data here!");
     return response.data;
   } catch (error) {
-    console.error('Error:', error);
+    console.error("Error:", error);
     throw error; // Re-throw the error to handle it in the calling code.
   }
 }
@@ -104,7 +83,8 @@ Router.post("/ondc-api/search", async (req, res) => {
   const { context: requestContext = {}, message = {} } = req.body;
   const { criteria = {}, payment } = message;
 
-  const protocolContext = createContextObject({
+  const Context = new ContextFactory();
+  const protocolContext = Context.ContextFactory({
     transactionId: requestContext?.transaction_id,
     bppId: requestContext?.bpp_id,
     city: requestContext.city,
@@ -183,6 +163,7 @@ Router.post("/ondc-api/search", async (req, res) => {
       },
     },
   };
+
   await makeApiCall(searchRequest)
   .then((result) => {
     res.send(result);
@@ -193,12 +174,28 @@ Router.post("/ondc-api/search", async (req, res) => {
 
   // try {
   //   const Layer = new ProtocolLayer();
-  //   const protocolResponse = await Layer.gatewaySearch(searchRequest); 
-    
-  //   res.send(protocolResponse); 
+  //   const protocolResponse = await Layer.gatewaySearch(searchRequest);
+
+  //   res.send(protocolResponse);
   // } catch (err) {
   //   console.log(err);
   // }
 });
 
+Router.post("/ondc-api/initialize-order", async (req, res, next) => {
+  const { body: orderRequests, user } = req;
+  console.log(req.body);
+  if (orderRequests && orderRequests.length) {
+    const InitOrderService = new ProtocolLayer();
+    InitOrderService.initMultipleOrder(orderRequests.message.items, user)
+      .then((response) => {
+        res.json(response);
+      })
+      .catch((err) => {
+        next(err);
+      });
+  } else {
+    res.send("Bad Request errors");
+  }
+});
 module.exports = Router;
